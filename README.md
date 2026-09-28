@@ -1,5 +1,7 @@
 # Rust Notepad
 
+![Rust Notepad: a copper notebook and pencil on slate. Just you and your words.](resources/social-preview.png)
+
 A small, native Windows plain-text editor written in Rust. No AI, telemetry, networking, plugins, spellcheck, Markdown rendering, or browser runtime.
 
 ## Run
@@ -32,6 +34,8 @@ New files use UTF-8 without BOM and CRLF. Unrecognized encodings and malformed U
 ### Dark mode
 
 Choose **View > Dark mode** to switch between the original light appearance and a slate/blue-gray palette: `#303841` editor background, `#E8EDF2` text, muted inactive tabs, and a green unsaved-tab indicator. The preference is remembered across restarts and applies to new and restored tabs. Existing installations default to light until you enable it.
+
+The text color stays consistent when resizing the window or changing fonts, including newly typed text.
 
 Changing appearance does not edit text, change selection, or clear undo history. Printing uses black text on the printer's paper, even in dark mode. Windows high-contrast settings override the custom palette without clearing your saved preference. Title-bar colors are applied where supported by Windows; system file/font/print/message dialogs and native scrollbars continue to follow Windows' own appearance. No undocumented global theme hooks or system-wide color changes are used.
 
@@ -104,7 +108,7 @@ The script locates MSVC using `vswhere`, configures its target environment, runs
 
 `-SmokeTest` runs isolated end-to-end application tests. `-Test` adds hidden native-control/PDF checks as well; PDF checks require **Microsoft Print to PDF**. The report is `target\<Rust-target>\native-self-test.txt`. Test artifacts stay under ignored `target` directories; smoke tests use their own `LOCALAPPDATA` and never read your normal editor session.
 
-`-ReleaseVersion 0.1.YYYYMMDD -Package` creates a ZIP and SHA-256 sidecar in `dist\packages`. The ZIP contains `notepad.exe`, `README.md`, and `BUILDINFO.json` with version, architecture, source commit, and executable checksum. Use a clean committed source tree for release packages.
+`-ReleaseVersion 0.1.YYYYMMDD -Package` creates a ZIP and SHA-256 sidecar in `dist\packages`. The ZIP contains `notepad.exe`, `README.md`, its banner under `resources`, and `BUILDINFO.json` with version, architecture, source commit, and executable checksum. Use a clean committed source tree for release packages.
 
 On a Windows ARM development host, installing the pinned x64 compiler may require:
 
@@ -133,6 +137,12 @@ Separate Windows 10 and native-x64 clean-machine runs, physical-printer/copy beh
 ## Source layout
 
 `src\document.rs`, `encoding.rs`, `file_io.rs`, `search.rs`, and `session.rs` hold testable state and file logic. `src\ui.rs` contains native window/control adapters and commands; `src\theme.rs` isolates display colors and native control painting; `src\printing.rs` isolates page setup and printing. The executable has no service/backend component.
+
+### Artwork
+
+The original copper notebook-and-pencil mark pairs the app's slate palette with warm paper and a sage-green accent. `resources\app.ico` contains transparent 16-256 pixel icons for Windows; `resources\icon.svg` and `resources\icon.png` are reusable vector and 1024-pixel versions. The README banner, `resources\social-preview.png`, is also a 1280 x 640 GitHub social-preview image.
+
+To regenerate all artwork on Windows, run `.\scripts\generate-artwork.ps1` (PowerShell and System.Drawing; no downloaded assets or extra packages). Geometry and colors live in that script. Generated assets are committed so normal builds do not need an image tool. To use the banner for shared repository links, upload `resources\social-preview.png` in the repository's **Settings > General > Social preview**.
 
 ## Release pipeline
 

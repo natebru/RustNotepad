@@ -390,6 +390,19 @@ fn set_text(hwnd: HWND, body: &str) -> Result<()> {
     Ok(())
 }
 
+fn set_editor_font(hwnd: HWND, font: HFONT) -> Result<()> {
+    unsafe {
+        let modified = SendMessageW(hwnd, EM_GETMODIFY, 0, 0);
+        let events = SendMessageW(hwnd, EM_SETEVENTMASK_, 0, 0);
+        // WM_SETFONT resets Rich Edit to CFE_AUTOCOLOR, even with an explicit dark palette.
+        SendMessageW(hwnd, WM_SETFONT, font as usize, 1);
+        let result = crate::theme::editor_text(hwnd);
+        SendMessageW(hwnd, EM_SETMODIFY, modified as usize, 0);
+        SendMessageW(hwnd, EM_SETEVENTMASK_, 0, events);
+        result
+    }
+}
+
 fn clipboard_text(hwnd: HWND) -> Result<String> {
     unsafe {
         if OpenClipboard(hwnd) == 0 {
@@ -907,13 +920,17 @@ impl App {
             if font.is_null() {
                 return Err(os_error("Create font"));
             }
+            let mut result = Ok(());
             for &editor in &self.editors {
-                SendMessageW(editor, WM_SETFONT, font as usize, 1);
+                if let Err(error) = set_editor_font(editor, font) {
+                    result = Err(error);
+                }
             }
             if !self.font.is_null() {
                 DeleteObject(self.font);
             }
             self.font = font;
+            result?;
         }
         Ok(())
     }
@@ -948,7 +965,9 @@ impl App {
             return Err("Opening this file would exceed 100 MiB of decoded text.".into());
         }
         let editor = create_editor(self.hwnd, &document)?;
-        if let Err(error) = crate::theme::editor(editor) {
+        if let Err(error) =
+            set_editor_font(editor, self.font).and_then(|()| crate::theme::editor(editor))
+        {
             unsafe {
                 DestroyWindow(editor);
             }
@@ -956,7 +975,6 @@ impl App {
         }
         let i = self.editors.len();
         unsafe {
-            SendMessageW(editor, WM_SETFONT, self.font as usize, 1);
             SendMessageW(
                 editor,
                 EM_SETTARGETDEVICE_,
@@ -2069,6 +2087,35 @@ impl Drop for Handle {
     }
 }
 
+struct Icon(HICON);
+impl Icon {
+    fn load(instance: HINSTANCE, width: i32, height: i32) -> Result<Self> {
+        // MAKEINTRESOURCE(1); owned handles avoid LR_SHARED reusing the wrong size.
+        let handle = unsafe {
+            LoadImageW(
+                instance,
+                std::ptr::without_provenance(1),
+                IMAGE_ICON,
+                width,
+                height,
+                0,
+            ) as HICON
+        };
+        if handle.is_null() {
+            Err(os_error("Load application icon"))
+        } else {
+            Ok(Self(handle))
+        }
+    }
+}
+impl Drop for Icon {
+    fn drop(&mut self) {
+        unsafe {
+            DestroyIcon(self.0);
+        }
+    }
+}
+
 fn own_session(root: &Path, paths: &[PathBuf]) -> Result<Option<Handle>> {
     let identity = file_io::hash(root.as_os_str().to_string_lossy().as_bytes());
     let name = format!("Local\\RustNotepad-{:x?}", identity);
@@ -2214,12 +2261,22 @@ pub fn run() -> Result<()> {
     unsafe {
         let instance = GetModuleHandleW(null());
         let class = wide(&window_class(&root));
+        let icon = Icon::load(
+            instance,
+            GetSystemMetrics(SM_CXICON),
+            GetSystemMetrics(SM_CYICON),
+        )?;
+        let small_icon = Icon::load(
+            instance,
+            GetSystemMetrics(SM_CXSMICON),
+            GetSystemMetrics(SM_CYSMICON),
+        )?;
         let wc = WNDCLASSW {
             lpfnWndProc: Some(window_proc),
             hInstance: instance,
             lpszClassName: class.as_ptr(),
             hCursor: LoadCursorW(null_mut(), IDC_ARROW),
-            hIcon: LoadIconW(null_mut(), IDI_APPLICATION),
+            hIcon: icon.0,
             hbrBackground: (COLOR_WINDOW + 1) as HBRUSH,
             ..zeroed()
         };
@@ -2243,6 +2300,8 @@ pub fn run() -> Result<()> {
         if hwnd.is_null() {
             return Err(os_error("Create application window"));
         }
+        SendMessageW(hwnd, WM_SETICON, ICON_BIG as usize, icon.0 as isize);
+        SendMessageW(hwnd, WM_SETICON, ICON_SMALL as usize, small_icon.0 as isize);
         let tabs = CreateWindowExW(
             0,
             wide("SysTabControl32").as_ptr(),
@@ -2446,6 +2505,117 @@ fn io_wait<T: Send + 'static>(
         EnableWindow(owner, 1);
     }
     result
+}
+
+#[cfg(test)]
+#[test]
+fn text_color_survives_font_and_document_lifecycle() {
+    unsafe {
+        let library = LoadLibraryExW(
+            wide("Msftedit.dll").as_ptr(),
+            null_mut(),
+            LOAD_LIBRARY_SEARCH_SYSTEM32,
+        );
+        assert!(!library.is_null());
+        let parent = CreateWindowExW(
+            0,
+            wide("STATIC").as_ptr(),
+            null(),
+            WS_OVERLAPPEDWINDOW,
+            0,
+            0,
+            800,
+            600,
+            null_mut(),
+            null_mut(),
+            GetModuleHandleW(null()),
+            null(),
+        );
+        assert!(!parent.is_null());
+        let result = std::panic::catch_unwind(|| {
+            for dark in [true, false] {
+                crate::theme::configure(dark).unwrap();
+                let expected = if crate::theme::is_dark() {
+                    crate::theme::FOREGROUND
+                } else {
+                    GetSysColor(COLOR_WINDOWTEXT)
+                };
+                for raw in ["", "Hello", "first\r\nsecond\n\u{1f600}"] {
+                    let mut doc = Document::from_text(raw, Encoding::Utf8);
+                    let editor = create_editor(parent, &doc).unwrap();
+                    let check = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        crate::theme::editor(editor).unwrap();
+                        let font = GetStockObject(SYSTEM_FIXED_FONT) as HFONT;
+                        set_editor_font(editor, font).unwrap();
+                        select(editor, CharRange { min: 0, max: -1 });
+                        crate::theme::assert_text_color(
+                            editor,
+                            expected,
+                            "new/restored tab after font",
+                        );
+                        assert_eq!(text(editor).unwrap(), doc.text.body);
+                        let range = selection(editor);
+                        for modified in [0, 1] {
+                            SendMessageW(editor, EM_SETMODIFY, modified, 0);
+                            set_editor_font(editor, GetStockObject(DEFAULT_GUI_FONT) as HFONT)
+                                .unwrap();
+                            crate::theme::assert_text_color(editor, expected, "resize/font change");
+                            assert_eq!(selection(editor).min, range.min);
+                            assert_eq!(selection(editor).max, range.max);
+                            assert_eq!(
+                                SendMessageW(editor, EM_GETMODIFY, 0, 0) != 0,
+                                modified != 0
+                            );
+                        }
+
+                        select(editor, CharRange { min: -1, max: -1 });
+                        SendMessageW(editor, WM_CHAR, b'!' as usize, 0);
+                        doc.update(text(editor).unwrap(), 0).unwrap();
+                        crate::theme::assert_text_color(editor, expected, "typing");
+                        for replacement in ["", "pasted/replaced text", "\u{1f600}\nnew text"] {
+                            doc.update(replacement.into(), 0).unwrap();
+                            set_text(editor, &doc.text.body).unwrap();
+                            select(editor, CharRange { min: 0, max: -1 });
+                            crate::theme::assert_text_color(
+                                editor,
+                                expected,
+                                "set_text/paste/replace",
+                            );
+                            doc.undo(false, 0).unwrap();
+                            set_text(editor, &doc.text.body).unwrap();
+                            crate::theme::assert_text_color(editor, expected, "undo");
+                            doc.undo(true, 0).unwrap();
+                            set_text(editor, &doc.text.body).unwrap();
+                            crate::theme::assert_text_color(editor, expected, "redo");
+                        }
+                        select(editor, CharRange { min: 0, max: -1 });
+                        for fail in [false, true] {
+                            let result = crate::theme::with_print_colors(editor, || {
+                                crate::theme::assert_text_color(editor, 0, "printing");
+                                if fail {
+                                    Err("simulated print failure".into())
+                                } else {
+                                    Ok(())
+                                }
+                            });
+                            assert_eq!(result.is_err(), fail);
+                            crate::theme::assert_text_color(editor, expected, "after printing");
+                        }
+                    }));
+                    DestroyWindow(editor);
+                    if let Err(panic) = check {
+                        std::panic::resume_unwind(panic);
+                    }
+                }
+            }
+        });
+        DestroyWindow(parent);
+        crate::theme::configure(false).unwrap();
+        FreeLibrary(library);
+        if let Err(panic) = result {
+            std::panic::resume_unwind(panic);
+        }
+    }
 }
 
 fn self_test(report: Option<PathBuf>) -> Result<()> {

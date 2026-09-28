@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+<title id="title">Rust Notepad - copper notebook and pencil on slate</title>
+<rect x="16" y="16" width="480" height="480" rx="104" fill="#303841"/>
+<rect x="106" y="104" width="292" height="330" rx="28" fill="#222A33"/>
+<rect x="96" y="78" width="292" height="338" rx="28" fill="#CE7959"/>
+<rect x="128" y="78" width="260" height="338" rx="28" fill="#F2EEE5"/>
+<polygon points="334,78 388,132 334,132" fill="#C9C8C2"/>
+<rect x="164" y="151" width="140" height="16" rx="8" fill="#56616B"/>
+<rect x="164" y="203" width="174" height="16" rx="8" fill="#56616B"/>
+<rect x="164" y="255" width="116" height="16" rx="8" fill="#56616B"/>
+<rect x="164" y="307" width="72" height="16" rx="8" fill="#56616B"/>
+<polygon points="250,371 365,256 411,302 296,417 240,427" fill="#303841"/>
+<polygon points="264,372 377,259 413,295 300,408" fill="#E39871"/>
+<polygon points="282,390 395,277 413,295 300,408" fill="#C66A48"/>
+<polygon points="264,372 300,408 252,420" fill="#F2EEE5"/>
+<polygon points="256,402 270,416 252,420" fill="#56616B"/>
+<polygon points="377,259 391,245 427,281 413,295" fill="#8BAE84"/>
+</svg>

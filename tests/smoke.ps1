@@ -81,6 +81,11 @@ try {
     $p = Start-Editor $fixture
     Wait-For { (Main-Window $p) -ne [IntPtr]::Zero } 'initial window'
     $window = Main-Window $p
+    foreach ($kind in @(0, 1)) {
+        if ([NativeNotepadTest]::SendNumber($window, 0x7F, [IntPtr]$kind, [IntPtr]::Zero) -eq [IntPtr]::Zero) {
+            throw "Missing application window icon (small/big: $kind)"
+        }
+    }
     $editor = Active-Editor $window
     $launchMs = $watch.ElapsedMilliseconds
     if ((Read-Editor $editor) -ne "first`nsecond`nthird`nlast") { throw 'Initial open lost text' }

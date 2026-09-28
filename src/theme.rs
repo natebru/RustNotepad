@@ -145,14 +145,7 @@ pub fn title_bar(hwnd: HWND) -> Result<()> {
 }
 
 pub fn editor(hwnd: HWND) -> Result<()> {
-    editor_colors(
-        hwnd,
-        if is_dark() {
-            FOREGROUND
-        } else {
-            unsafe { GetSysColor(COLOR_WINDOWTEXT) }
-        },
-    )?;
+    editor_text(hwnd)?;
     unsafe {
         SendMessageW(
             hwnd,
@@ -181,6 +174,17 @@ pub fn editor(hwnd: HWND) -> Result<()> {
         InvalidateRect(hwnd, null(), 1);
     }
     Ok(())
+}
+
+pub fn editor_text(hwnd: HWND) -> Result<()> {
+    editor_colors(
+        hwnd,
+        if is_dark() {
+            FOREGROUND
+        } else {
+            unsafe { GetSysColor(COLOR_WINDOWTEXT) }
+        },
+    )
 }
 
 fn editor_colors(hwnd: HWND, color: COLORREF) -> Result<()> {
@@ -215,6 +219,33 @@ pub fn editor_foreground(hwnd: HWND) -> COLORREF {
         format.size = size_of::<CharFormat>() as u32;
         SendMessageW(hwnd, EM_GETCHARFORMAT, 0, &mut format as *mut _ as isize);
         format.color
+    }
+}
+
+#[cfg(test)]
+pub fn assert_text_color(hwnd: HWND, expected: COLORREF, context: &str) {
+    unsafe {
+        for selection in [0, 1] {
+            let mut format: CharFormat = zeroed();
+            format.size = size_of::<CharFormat>() as u32;
+            SendMessageW(
+                hwnd,
+                EM_GETCHARFORMAT,
+                selection,
+                &mut format as *mut _ as isize,
+            );
+            assert_eq!(
+                format.mask & CFM_COLOR,
+                CFM_COLOR,
+                "{context}: inconsistent selection color"
+            );
+            assert_eq!(
+                format.effects & CFM_COLOR,
+                0,
+                "{context}: automatic text color was restored"
+            );
+            assert_eq!(format.color, expected, "{context}: wrong text color");
+        }
     }
 }
 

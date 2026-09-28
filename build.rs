@@ -3,6 +3,7 @@ mod version;
 
 fn main() {
     println!("cargo:rerun-if-changed=resources/app.manifest");
+    println!("cargo:rerun-if-changed=resources/app.ico");
     println!("cargo:rerun-if-changed=src/version.rs");
     println!("cargo:rerun-if-env-changed=RUSTNOTEPAD_VERSION");
     let version = std::env::var("RUSTNOTEPAD_VERSION")
@@ -32,9 +33,15 @@ fn main() {
         );
         let rc = out.join("version.rc");
         let res = out.join("version.res");
+        let icon = std::fs::canonicalize("resources/app.ico")
+            .expect("Read app icon")
+            .display()
+            .to_string()
+            .replace('\\', "\\\\");
         let resource = format!(
             r#"
 #include <winver.h>
+1 ICON "{icon}"
 1 VERSIONINFO
 FILEVERSION {numeric}
 PRODUCTVERSION {numeric}

@@ -46,6 +46,7 @@ try {
     if ($ReleaseVersion -and ($info.ProductVersion -ne $ReleaseVersion -or $info.FileVersion -ne $ReleaseVersion)) {
         throw "Executable version does not match $ReleaseVersion."
     }
+    & (Join-Path $root 'tests\artwork.ps1') -Executable $executable
     if ($Test) {
         $report = Join-Path $root "target\$target\native-self-test.txt"
         $process = Start-Process $executable -ArgumentList '--self-test', "`"$report`"" -PassThru
@@ -66,13 +67,16 @@ try {
         $revision = git rev-parse HEAD
         if ($LASTEXITCODE -ne 0) { throw 'Cannot determine source revision for package.' }
         Copy-Item (Join-Path $root 'README.md') (Join-Path $destination 'README.md')
+        $artwork = Join-Path $destination 'resources'
+        New-Item -ItemType Directory -Force -Path $artwork | Out-Null
+        Copy-Item (Join-Path $root 'resources\social-preview.png') (Join-Path $artwork 'social-preview.png')
         [ordered]@{ version = $ReleaseVersion; architecture = $Architecture; target = $target; commit = $revision; executable_sha256 = (Get-FileHash $executable -Algorithm SHA256).Hash.ToLowerInvariant() } |
             ConvertTo-Json | Set-Content (Join-Path $destination 'BUILDINFO.json') -Encoding utf8NoBOM
         $packages = Join-Path $root 'dist\packages'
         New-Item -ItemType Directory -Force -Path $packages | Out-Null
         $name = "RustNotepad-$ReleaseVersion-windows-$Architecture.zip"
         $archive = Join-Path $packages $name
-        Compress-Archive -Path (Join-Path $destination 'notepad.exe'), (Join-Path $destination 'README.md'), (Join-Path $destination 'BUILDINFO.json') -DestinationPath $archive -Force
+        Compress-Archive -Path (Join-Path $destination 'notepad.exe'), (Join-Path $destination 'README.md'), (Join-Path $destination 'BUILDINFO.json'), $artwork -DestinationPath $archive -Force
         $checksum = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
         "$checksum  $name" | Set-Content "$archive.sha256" -Encoding ascii
         Write-Output "Release package: $archive"
