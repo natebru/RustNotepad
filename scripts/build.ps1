@@ -67,6 +67,7 @@ try {
         $revision = git rev-parse HEAD
         if ($LASTEXITCODE -ne 0) { throw 'Cannot determine source revision for package.' }
         Copy-Item (Join-Path $root 'README.md') (Join-Path $destination 'README.md')
+        Copy-Item (Join-Path $root 'LICENSE') (Join-Path $destination 'LICENSE')
         $artwork = Join-Path $destination 'resources'
         New-Item -ItemType Directory -Force -Path $artwork | Out-Null
         Copy-Item (Join-Path $root 'resources\social-preview.png') (Join-Path $artwork 'social-preview.png')
@@ -76,7 +77,7 @@ try {
         New-Item -ItemType Directory -Force -Path $packages | Out-Null
         $name = "RustNotepad-$ReleaseVersion-windows-$Architecture.zip"
         $archive = Join-Path $packages $name
-        Compress-Archive -Path (Join-Path $destination 'notepad.exe'), (Join-Path $destination 'README.md'), (Join-Path $destination 'BUILDINFO.json'), $artwork -DestinationPath $archive -Force
+        Compress-Archive -Path (Join-Path $destination 'notepad.exe'), (Join-Path $destination 'README.md'), (Join-Path $destination 'LICENSE'), (Join-Path $destination 'BUILDINFO.json'), $artwork -DestinationPath $archive -Force
         $checksum = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
         "$checksum  $name" | Set-Content "$archive.sha256" -Encoding ascii
         Write-Output "Release package: $archive"

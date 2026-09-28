@@ -4,6 +4,8 @@
 
 A small, native Windows plain-text editor written in Rust. No AI, telemetry, networking, plugins, spellcheck, Markdown rendering, or browser runtime.
 
+Released under the MIT license; see `LICENSE`.
+
 ## Run
 
 Download the ZIP for your processor from the repository's GitHub Releases page and extract `notepad.exe`, or build from source using the instructions below. Build outputs and local test artifacts are not committed to the repository.
@@ -108,7 +110,7 @@ The script locates MSVC using `vswhere`, configures its target environment, runs
 
 `-SmokeTest` runs isolated end-to-end application tests. `-Test` adds hidden native-control/PDF checks as well; PDF checks require **Microsoft Print to PDF**. The report is `target\<Rust-target>\native-self-test.txt`. Test artifacts stay under ignored `target` directories; smoke tests use their own `LOCALAPPDATA` and never read your normal editor session.
 
-`-ReleaseVersion 0.1.YYYYMMDD -Package` creates a ZIP and SHA-256 sidecar in `dist\packages`. The ZIP contains `notepad.exe`, `README.md`, its banner under `resources`, and `BUILDINFO.json` with version, architecture, source commit, and executable checksum. Use a clean committed source tree for release packages.
+`-ReleaseVersion 0.1.YYYYMMDD -Package` creates a ZIP and SHA-256 sidecar in `dist\packages`. The ZIP contains `notepad.exe`, `README.md`, `LICENSE`, the README banner under `resources`, and `BUILDINFO.json` with version, architecture, source commit, and executable checksum. Use a clean committed source tree for release packages.
 
 On a Windows ARM development host, installing the pinned x64 compiler may require:
 
