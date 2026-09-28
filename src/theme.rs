@@ -160,14 +160,14 @@ pub fn editor(hwnd: HWND) -> Result<()> {
             (!is_dark()) as usize,
             BACKGROUND as isize,
         );
-        let style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+        let style = GetWindowLongW(hwnd, GWL_EXSTYLE);
         let updated = if is_dark() {
-            style & !(WS_EX_CLIENTEDGE as isize)
+            style & !(WS_EX_CLIENTEDGE as i32)
         } else {
-            style | WS_EX_CLIENTEDGE as isize
+            style | WS_EX_CLIENTEDGE as i32
         };
         if updated != style {
-            SetWindowLongPtrW(hwnd, GWL_EXSTYLE, updated);
+            SetWindowLongW(hwnd, GWL_EXSTYLE, updated);
             SetWindowPos(
                 hwnd,
                 null_mut(),

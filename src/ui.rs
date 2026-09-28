@@ -1581,7 +1581,10 @@ impl App {
             ABOUT => {
                 ask(
                     self.hwnd,
-                    "Rust Notepad 0.1.0\nNative plain-text editing. No AI, telemetry, or network service.\n\nRecovery text is stored locally in %LOCALAPPDATA%\\RustNotepad.\n20 MiB per file; 100 MiB decoded text across tabs.",
+                    &format!(
+                        "Rust Notepad {}\nNative plain-text editing. No AI, telemetry, or network service.\n\nRecovery text is stored locally in %LOCALAPPDATA%\\RustNotepad.\n20 MiB per file; 100 MiB decoded text across tabs.",
+                        rustnotepad::VERSION
+                    ),
                     MB_OK | MB_ICONINFORMATION,
                 );
             }
@@ -1696,12 +1699,12 @@ unsafe extern "system" fn prompt_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPAR
         }
         match msg {
             WM_CLOSE => {
-                SetWindowLongPtrW(hwnd, GWLP_USERDATA, IDCANCEL as isize);
+                SetWindowLongW(hwnd, GWLP_USERDATA, IDCANCEL);
                 ShowWindow(hwnd, SW_HIDE);
                 0
             }
             WM_COMMAND if [IDOK as usize, IDCANCEL as usize, 3].contains(&(wp & 0xffff)) => {
-                SetWindowLongPtrW(hwnd, GWLP_USERDATA, (wp & 0xffff) as isize);
+                SetWindowLongW(hwnd, GWLP_USERDATA, (wp & 0xffff) as i32);
                 ShowWindow(hwnd, SW_HIDE);
                 0
             }
@@ -1873,7 +1876,7 @@ fn prompt(
                 DispatchMessageW(&msg);
             }
         }
-        let id = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as i32;
+        let id = GetWindowLongW(hwnd, GWLP_USERDATA);
         let result = if id == IDOK || id == 3 {
             let text = edits
                 .iter()

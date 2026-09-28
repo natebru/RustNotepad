@@ -4,7 +4,7 @@ A small, native Windows plain-text editor written in Rust. No AI, telemetry, net
 
 ## Run
 
-Build from source using the instructions below to generate `dist\notepad.exe`. Build outputs and local test artifacts are not committed to the repository.
+Download the ZIP for your processor from the repository's GitHub Releases page and extract `notepad.exe`, or build from source using the instructions below. Build outputs and local test artifacts are not committed to the repository.
 
 Run `dist\notepad.exe`, or pass one or more file paths:
 
@@ -14,7 +14,7 @@ Run `dist\notepad.exe`, or pass one or more file paths:
 
 The executable is portable and uses Windows' built-in controls and dialogs. It does **not** install anything, change file associations, or replace the operating system's Notepad. Keep it in its own directory; do not copy it into Windows system directories.
 
-Target: Windows 10/11 x64. The executable also runs under Windows 11's x64 emulation on ARM. The C runtime is statically linked; Rust and Visual Studio are not required to run it.
+Builds are available for Windows **x86 (32-bit)**, **x64**, and **ARM64 (native)**. Use ARM64 on Windows on ARM rather than the emulated x64 build. Windows 10/11 compatibility still requires the manual checks described below. The C runtime is statically linked; Rust and Visual Studio are not required to run the executable. Release binaries are currently unsigned.
 
 ## Features
 
@@ -87,16 +87,24 @@ Disk writes/checkpoints run on bounded worker paths. Explicit file operations br
 
 ## Build and checks
 
-Prerequisites: Rustup, Microsoft Visual Studio 2022 Build Tools with the **Desktop development with C++** workload and a Windows SDK. The tested x64 Rust toolchain is pinned in `rust-toolchain.toml`; dependencies are locked in `Cargo.lock`.
+Prerequisites: Rustup, Microsoft Visual Studio 2022 Build Tools with the **Desktop development with C++** workload and a Windows SDK. ARM64 builds also need **MSVC v143 - VS 2022 C++ ARM64 build tools** (`Microsoft.VisualStudio.Component.VC.Tools.ARM64`). The tested x64-hosted Rust compiler is pinned in `rust-toolchain.toml`; dependencies are locked in `Cargo.lock`.
 
 From PowerShell:
 
 ```powershell
 .\scripts\build.ps1
 .\scripts\build.ps1 -Test
+rustup target add i686-pc-windows-msvc aarch64-pc-windows-msvc
+.\scripts\build.ps1 -Architecture x86 -SmokeTest
+.\scripts\build.ps1 -Architecture arm64 -SmokeTest
+.\scripts\build.ps1 -Architecture arm64 -ReleaseVersion 0.1.20260928 -SmokeTest -Package
 ```
 
-The script locates MSVC using `vswhere`, configures its environment, runs formatting/lint/unit checks, builds the optimized executable, and copies it into `dist`. `-Test` additionally runs hidden native-control/PDF checks and isolated end-to-end smoke tests. PDF checks require the Windows **Microsoft Print to PDF** printer. Test artifacts stay under ignored `target` directories; smoke tests use their own `LOCALAPPDATA` and never read your normal editor session.
+The script locates MSVC using `vswhere`, configures its target environment, runs formatting/lint/unit checks, verifies the PE machine type and release metadata, and copies the optimized executable into `dist\<architecture>\notepad.exe`. The default x64 build also maintains `dist\notepad.exe`. Tests execute the target's binaries: build ARM64 on an ARM64 host; x86 and x64 also run under emulation there.
+
+`-SmokeTest` runs isolated end-to-end application tests. `-Test` adds hidden native-control/PDF checks as well; PDF checks require **Microsoft Print to PDF**. The report is `target\<Rust-target>\native-self-test.txt`. Test artifacts stay under ignored `target` directories; smoke tests use their own `LOCALAPPDATA` and never read your normal editor session.
+
+`-ReleaseVersion 0.1.YYYYMMDD -Package` creates a ZIP and SHA-256 sidecar in `dist\packages`. The ZIP contains `notepad.exe`, `README.md`, and `BUILDINFO.json` with version, architecture, source commit, and executable checksum. Use a clean committed source tree for release packages.
 
 On a Windows ARM development host, installing the pinned x64 compiler may require:
 
@@ -125,3 +133,22 @@ Separate Windows 10 and native-x64 clean-machine runs, physical-printer/copy beh
 ## Source layout
 
 `src\document.rs`, `encoding.rs`, `file_io.rs`, `search.rs`, and `session.rs` hold testable state and file logic. `src\ui.rs` contains native window/control adapters and commands; `src\theme.rs` isolates display colors and native control painting; `src\printing.rs` isolates page setup and printing. The executable has no service/backend component.
+
+## Release pipeline
+
+In GitHub, open **Actions > Release > Run workflow** and select **main**. The workflow uses the **UTC date at the start of the run** to select `0.1.YYYYMMDD` (for example, `0.1.20260928`) and tags the exact workflow commit as `v0.1.YYYYMMDD`.
+
+Three jobs build and test in parallel: x86 and x64 on `windows-2025`, and native ARM64 on `windows-11-arm`. Every job runs formatting, strict Clippy, unit tests, and isolated application smoke tests. PDF/printer-dependent checks remain available locally via `-Test` and are not required on hosted runners. Actions are pinned to commit hashes; only the final publication job has repository write permission.
+
+After all jobs succeed, the workflow verifies package checksums, creates a draft with all downloads, and publishes it:
+
+```text
+RustNotepad-0.1.YYYYMMDD-windows-x86.zip
+RustNotepad-0.1.YYYYMMDD-windows-x64.zip
+RustNotepad-0.1.YYYYMMDD-windows-arm64.zip
+SHA256SUMS.txt
+```
+
+The release date is embedded in the About dialog and Windows `FileVersion`/`ProductVersion` strings. Windows' numeric four-component versions use `0.1.YYYY.MMDD`, because each numeric component is limited to 16 bits. The manifest is generated for each CPU architecture instead of hardcoding x64.
+
+Only one version can be published per UTC day. Runs are serialized and existing dated tags are rejected rather than overwritten. A build failure produces no release. If publication is interrupted after draft creation, review the existing draft and finish publishing it rather than rerunning a workflow that would replace its tag. Source `Cargo.toml` retains the baseline package version; release builds override the display/resource version without editing tracked files.

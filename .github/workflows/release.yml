@@ -1,0 +1,121 @@
+name: Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - name: Resolve UTC release version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$BRANCH" = "refs/heads/main" || { echo "Release from main only."; exit 1; }
+          version="0.1.$(date -u +%Y%m%d)"
+          tag="v$version"
+          # Do not silently replace a previously published release from the same day.
+          tags="$(gh api --paginate "repos/$GH_REPO/tags?per_page=100" --jq '.[].name')"
+          if grep -Fxq "$tag" <<< "$tags"; then
+            echo "Tag $tag already exists. Published daily versions are immutable."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: x86
+            target: i686-pc-windows-msvc
+            runner: windows-2025
+          - architecture: x64
+            target: x86_64-pc-windows-msvc
+            runner: windows-2025
+          - architecture: arm64
+            target: aarch64-pc-windows-msvc
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust compiler and target
+        shell: pwsh
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $toolchain = (Select-String -Path rust-toolchain.toml -Pattern '^channel = "([^"]+)"').Matches.Groups[1].Value
+          if (-not $toolchain) { throw 'Missing pinned Rust toolchain.' }
+          rustup toolchain install $toolchain --force-non-host --profile minimal --component clippy --component rustfmt
+          if ($LASTEXITCODE -ne 0) { throw 'Toolchain installation failed.' }
+          rustup target add --toolchain $toolchain $env:TARGET
+          if ($LASTEXITCODE -ne 0) { throw 'Target installation failed.' }
+      - name: Build, test, verify PE architecture and package
+        shell: pwsh
+        env:
+          ARCHITECTURE: ${{ matrix.architecture }}
+          RELEASE_VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          .\scripts\build.ps1 -Architecture $env:ARCHITECTURE -ReleaseVersion $env:RELEASE_VERSION -SmokeTest -Package
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-${{ matrix.architecture }}
+          path: dist/packages/*
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: release-*
+          path: packages
+          merge-multiple: true
+      - name: Verify all packages and publish release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.version.outputs.version }}
+          TAG: ${{ needs.version.outputs.tag }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          cd packages
+          for arch in x86 x64 arm64; do
+            file="RustNotepad-$VERSION-windows-$arch.zip"
+            test -s "$file"
+            test -s "$file.sha256"
+            sha256sum --check "$file.sha256"
+          done
+          cat ./*.sha256 > SHA256SUMS.txt
+          gh release create "$TAG" ./*.zip SHA256SUMS.txt \
+            --repo "$GH_REPO" --target "$COMMIT" --title "RustNotepad $VERSION" \
+            --notes "Portable Windows builds: x86 (32-bit), x64, and native ARM64. Extract the matching ZIP and run notepad.exe. Each package includes README.md and BUILDINFO.json. SHA256SUMS.txt verifies downloads. Executables are unsigned." \
+            --draft
+          gh release edit "$TAG" --repo "$GH_REPO" --draft=false --latest

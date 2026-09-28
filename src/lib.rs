@@ -3,6 +3,9 @@ pub mod encoding;
 pub mod file_io;
 pub mod search;
 pub mod session;
+pub mod version;
+
+pub const VERSION: &str = env!("RUSTNOTEPAD_VERSION");
 
 pub const FILE_LIMIT: usize = 20 * 1024 * 1024;
 pub const TEXT_LIMIT: usize = 100 * 1024 * 1024;

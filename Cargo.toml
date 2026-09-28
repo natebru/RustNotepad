@@ -1,6 +1,6 @@
 [package]
 name = "rustnotepad"
-version = "0.1.0"
+version = "0.1.20260928"
 edition = "2024"
 description = "A native Windows plain-text editor without AI or network services"
 license = "MIT"
