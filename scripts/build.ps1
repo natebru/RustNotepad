@@ -10,7 +10,8 @@ $root = Split-Path $PSScriptRoot
 $target = @{ x86 = 'i686-pc-windows-msvc'; x64 = 'x86_64-pc-windows-msvc'; arm64 = 'aarch64-pc-windows-msvc' }[$Architecture]
 $vcArchitecture = @{ x86 = 'x64_x86'; x64 = 'x64'; arm64 = 'x64_arm64' }[$Architecture]
 if ($ReleaseVersion) {
-    if ($ReleaseVersion -cnotmatch '^0\.1\.(\d{8})$') { throw 'ReleaseVersion must be 0.1.YYYYMMDD.' }
+    if ($ReleaseVersion -cnotmatch '^0\.1\.([0-9]{8})(?:\.([1-9][0-9]*))?$') { throw 'ReleaseVersion must be 0.1.YYYYMMDD or 0.1.YYYYMMDD.N.' }
+    $releaseRevision = if ($Matches[2]) { [uint16]::Parse($Matches[2], [Globalization.CultureInfo]::InvariantCulture) } else { 0 }
     $date = [DateTime]::ParseExact($Matches[1], 'yyyyMMdd', [Globalization.CultureInfo]::InvariantCulture)
     if ($date.Year -lt 2000) { throw 'Release date must be in or after 2000.' }
 }
@@ -27,6 +28,7 @@ $previousVersion = $env:RUSTNOTEPAD_VERSION
 Push-Location $root
 try {
     if ($ReleaseVersion) { $env:RUSTNOTEPAD_VERSION = $ReleaseVersion }
+    & (Join-Path $root 'tests\release-version.ps1')
     $commands = @(
         "call `"$setup`" $vcArchitecture >nul",
         "`"$cargo`" fmt --check",
@@ -46,6 +48,10 @@ try {
     if ($ReleaseVersion -and ($info.ProductVersion -ne $ReleaseVersion -or $info.FileVersion -ne $ReleaseVersion)) {
         throw "Executable version does not match $ReleaseVersion."
     }
+    if ($ReleaseVersion -and (
+        $info.FileMajorPart -ne 0 -or $info.FileMinorPart -ne $date.Year -or
+        $info.FileBuildPart -ne ($date.Month * 100 + $date.Day) -or $info.FilePrivatePart -ne $releaseRevision
+    )) { throw "Numeric Windows version does not match $ReleaseVersion." }
     & (Join-Path $root 'tests\artwork.ps1') -Executable $executable
     if ($Test) {
         $report = Join-Path $root "target\$target\native-self-test.txt"

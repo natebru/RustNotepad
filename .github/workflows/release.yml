@@ -17,26 +17,30 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Resolve UTC release version
         id: version
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           BRANCH: ${{ github.ref }}
-        shell: bash
+        shell: pwsh
         run: |
-          set -euo pipefail
-          test "$BRANCH" = "refs/heads/main" || { echo "Release from main only."; exit 1; }
-          version="0.1.$(date -u +%Y%m%d)"
-          tag="v$version"
-          # Do not silently replace a previously published release from the same day.
-          tags="$(gh api --paginate "repos/$GH_REPO/tags?per_page=100" --jq '.[].name')"
-          if grep -Fxq "$tag" <<< "$tags"; then
-            echo "Tag $tag already exists. Published daily versions are immutable."
-            exit 1
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          $ErrorActionPreference = 'Stop'
+          if ($env:BRANCH -ne 'refs/heads/main') { throw 'Release from main only.' }
+          .\tests\release-version.ps1
+          $date = [DateTime]::UtcNow.ToString('yyyyMMdd', [Globalization.CultureInfo]::InvariantCulture)
+          $tags = @(gh api --paginate "repos/$env:GH_REPO/tags?per_page=100" --jq '.[].name')
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot enumerate release tags.' }
+          # Draft releases can reserve a version without creating a tag.
+          $releases = @(gh api --paginate "repos/$env:GH_REPO/releases?per_page=100" --jq '.[].tag_name')
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot enumerate releases.' }
+          $version = .\scripts\release-version.ps1 -Date $date -ExistingTags ($tags + $releases)
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=v$version" >> $env:GITHUB_OUTPUT
+          Write-Output "Selected immutable release v$version"
 
   build:
     needs: version
@@ -114,8 +118,16 @@ jobs:
             sha256sum --check "$file.sha256"
           done
           cat ./*.sha256 > SHA256SUMS.txt
+          # Fail closed if another publisher reserved this version after allocation.
+          tags="$(gh api --paginate "repos/$GH_REPO/tags?per_page=100" --jq '.[].name')"
+          releases="$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" --jq '.[].tag_name')"
+          if grep -Fxq "$TAG" <<< "$tags"$'\n'"$releases"; then
+            echo "Version $TAG is already reserved; existing releases will not be overwritten."
+            exit 1
+          fi
           gh release create "$TAG" ./*.zip SHA256SUMS.txt \
             --repo "$GH_REPO" --target "$COMMIT" --title "RustNotepad $VERSION" \
-            --notes "Portable Windows builds: x86 (32-bit), x64, and native ARM64. Extract the matching ZIP and run notepad.exe. Each package includes README.md and BUILDINFO.json. SHA256SUMS.txt verifies downloads. Executables are unsigned." \
+            --generate-notes \
+            --notes "Portable Windows builds: x86 (32-bit), x64, and native ARM64. Extract the matching ZIP and run notepad.exe. Each package includes README.md, LICENSE, and BUILDINFO.json. SHA256SUMS.txt verifies downloads. Executables are unsigned." \
             --draft
           gh release edit "$TAG" --repo "$GH_REPO" --draft=false --latest

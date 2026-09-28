@@ -104,13 +104,14 @@ rustup target add i686-pc-windows-msvc aarch64-pc-windows-msvc
 .\scripts\build.ps1 -Architecture x86 -SmokeTest
 .\scripts\build.ps1 -Architecture arm64 -SmokeTest
 .\scripts\build.ps1 -Architecture arm64 -ReleaseVersion 0.1.20260928 -SmokeTest -Package
+.\scripts\build.ps1 -Architecture x64 -ReleaseVersion 0.1.20260928.1 -SmokeTest -Package
 ```
 
 The script locates MSVC using `vswhere`, configures its target environment, runs formatting/lint/unit checks, verifies the PE machine type and release metadata, and copies the optimized executable into `dist\<architecture>\notepad.exe`. The default x64 build also maintains `dist\notepad.exe`. Tests execute the target's binaries: build ARM64 on an ARM64 host; x86 and x64 also run under emulation there.
 
 `-SmokeTest` runs isolated end-to-end application tests. `-Test` adds hidden native-control/PDF checks as well; PDF checks require **Microsoft Print to PDF**. The report is `target\<Rust-target>\native-self-test.txt`. Test artifacts stay under ignored `target` directories; smoke tests use their own `LOCALAPPDATA` and never read your normal editor session.
 
-`-ReleaseVersion 0.1.YYYYMMDD -Package` creates a ZIP and SHA-256 sidecar in `dist\packages`. The ZIP contains `notepad.exe`, `README.md`, `LICENSE`, the README banner under `resources`, and `BUILDINFO.json` with version, architecture, source commit, and executable checksum. Use a clean committed source tree for release packages.
+`-ReleaseVersion 0.1.YYYYMMDD -Package` (or `0.1.YYYYMMDD.N` for a same-day revision) creates a ZIP and SHA-256 sidecar in `dist\packages`. The ZIP contains `notepad.exe`, `README.md`, `LICENSE`, the README banner under `resources`, and `BUILDINFO.json` with version, architecture, source commit, and executable checksum. Use a clean committed source tree for release packages.
 
 On a Windows ARM development host, installing the pinned x64 compiler may require:
 
@@ -148,7 +149,9 @@ To regenerate all artwork on Windows, run `.\scripts\generate-artwork.ps1` (Powe
 
 ## Release pipeline
 
-In GitHub, open **Actions > Release > Run workflow** and select **main**. The workflow uses the **UTC date at the start of the run** to select `0.1.YYYYMMDD` (for example, `0.1.20260928`) and tags the exact workflow commit as `v0.1.YYYYMMDD`.
+In GitHub, open **Actions > Release > Run workflow** and select **main**. The workflow resolves the **UTC date once in its version job** and tags the exact workflow commit. The first release on a date is `0.1.YYYYMMDD`; subsequent releases append a numeric revision: `0.1.20260928.1`, `0.1.20260928.2`, and so on. Revision numbers reset on each new UTC date.
+
+The allocator checks all existing tags and releases (including drafts), takes the highest revision for that date, and increments it rather than filling gaps. Workflow runs are serialized; publication checks again for collisions and fails instead of replacing an existing tag or release. A failed build with no tag or draft can reuse its unreserved number. A failed publication that left a draft reserves that number; start a fresh workflow to allocate the next one. Revisions range from 1 to 65535; exhaustion fails explicitly.
 
 Three jobs build and test in parallel: x86 and x64 on `windows-2025`, and native ARM64 on `windows-11-arm`. Every job runs formatting, strict Clippy, unit tests, and isolated application smoke tests. PDF/printer-dependent checks remain available locally via `-Test` and are not required on hosted runners. Actions are pinned to commit hashes; only the final publication job has repository write permission.
 
@@ -161,6 +164,6 @@ RustNotepad-0.1.YYYYMMDD-windows-arm64.zip
 SHA256SUMS.txt
 ```
 
-The release date is embedded in the About dialog and Windows `FileVersion`/`ProductVersion` strings. Windows' numeric four-component versions use `0.1.YYYY.MMDD`, because each numeric component is limited to 16 bits. The manifest is generated for each CPU architecture instead of hardcoding x64.
+Same-day revisions include the suffix in each ZIP name, such as `RustNotepad-0.1.20260928.1-windows-arm64.zip`.
 
-Only one version can be published per UTC day. Runs are serialized and existing dated tags are rejected rather than overwritten. A build failure produces no release. If publication is interrupted after draft creation, review the existing draft and finish publishing it rather than rerunning a workflow that would replace its tag. Source `Cargo.toml` retains the baseline package version; release builds override the display/resource version without editing tracked files.
+The full release version is embedded in the About dialog and Windows `FileVersion`/`ProductVersion` strings. Numeric Windows and manifest versions use `0.YYYY.MMDD.N` (revision zero for the first release), keeping every field within 16 bits and preserving chronological ordering. For example, `0.1.20260928.1` maps to `0.2026.928.1`. This supersedes the original release's `0.1.2026.928` numeric mapping; new builds sort after it. The manifest is generated for each CPU architecture instead of hardcoding x64. Cargo retains its three-part package version; the workflow supplies the full application version through `RUSTNOTEPAD_VERSION`.
